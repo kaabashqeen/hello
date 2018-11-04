@@ -1,8 +1,13 @@
 import tradersbot as tt
 import time
-import mibian
+# import mibian
 import scipy
 import math
+import matplotlib
+import numpy as np
+import matplotlib.pyplot as plt
+import py_vollib.black_scholes.implied_volatility as iv
+
 
 t = tt.TradersBot(host='127.0.0.1', id='trader0', password='trader0')
 # Keeps track of prices
@@ -11,12 +16,16 @@ UNDERLYINGS = {}
 MARKET_STATES = {}
 TRADER_STATE = {}
 
+end_time = None
+
+count = 0
 
 SPREAD = 0.05
 spot = 100
 puts = {}
 calls = {}
-vols = {}
+puts_ivs = {}
+calls_ivs = {}
 put_greeks = {}
 call_greeks = {}
 start = time.time()
@@ -27,6 +36,24 @@ order_id = []
 info = []
 
 history = {} # ticker : [isBuy, quantity, price]
+
+# class VolCurve():
+#
+#     def __init__(self, sec_state):
+#         self.name = sec_state['ticker']
+#         self.bids = sec_state['bids']
+#         self.asks = sec_state['asks']
+#         self.price = sec_state['price']
+#         self.time = sec_state['time']
+#         self.volcurve = None
+#
+#
+#     def calc_volcurve(self):
+#         volcurve = None
+#
+#         self.volcurve = volcurve
+#
+
 
 
 def ack_register(msg, order):
@@ -48,70 +75,102 @@ def ack_register(msg, order):
         MARKET_STATES[mkt_state] = market_states[mkt_state]
     TRADER_STATE = trader_state
 
-    print(SECURITIES)
-    print(UNDERLYINGS)
-    print(MARKET_STATES)
-    print(TRADER_STATE)
+#     print(SECURITIES)
+#     print(UNDERLYINGS)
+#     print(MARKET_STATES)
+#     print(TRADER_STATE)
+#     print()
 
-#
-# def market_update(msg, order):
-#     global spot
-#     print(msg)
-#     state = msg['market_state']
-#     ticker = state['ticker']
-#     direction = ticker[-1]
-#     val = ticker[1:-1]
-#     if 'ask_price' in msg['market_state'] and 'bid_price' in msg['market_state']:
-#         price = (max(msg['market_state']['bids'], key=int) + min(msg['market_state']['asks'], key=int)) / 2
-#     else:
-#         price = msg['market_state']['last_price']
-#
-#     #this is a put
-#     if direction == 'P':
-#         puts[val] = price
-#     elif direction == 'C':
-#         calls[val] = price
-#     elif ticker == 'TMXFUT':
-#         spot = price
-#         print('TIIIICK', ticker)
-#     else:
-#         print('WEEEEEEIRD')
-#
-#     # do we still want to keep all the old puts/calls?
-#     print(puts, calls)
-#     print('SPOOOT', spot)
-#     vals()
-#
-#     smileTrade(order)
-#     #cancelOrders(order)
-#
-#     if 'ask_price' in msg['market_state'] and 'bid_price' in msg['market_state']:
-#         price = (max(msg['market_state']['bids'], key=int) + min(msg['market_state']['asks'], key=int)) / 2
-#
-#         mid = (max(msg['market_state']['bids'], key=int) + min(msg['market_state']['asks'], key=int)) / 2
-#         if abs(mid - min(msg['market_state']['asks'], key=int)) * 1.0 / mid >= SPREAD:
-#             makeMarket(ticker, val, direction, mid, order)
-#
-#
-# def vals():
-#     time_left = 450 - (time.time() - start)
-#     prev = None
-#     for call in calls:
-#         val = mibian.BS([spot, call, 0, time_left/15.0], callPrice = calls[call], volatility = prev)
-#         vols[call] = val.impliedVolatility
-#         # not sure if this is the correct way to calculate implied volatility
-#         prev = val.impliedVolatility
-#         print(vols[call])
-#         # greeks
-#         call_greeks[call] = (val.impliedVolatility, val.callDelta, val.vega, val.gamma)
-#     prev = None
-#     for put in puts:
-#         val = mibian.BS([spot, put, 0, time_left/15.0], putPrice = puts[put], volatility = prev )
-#         vols[put] = val.impliedVolatility
-#         prev = val.impliedVolatility
-#         print(vols[put])
-#         put_greeks[put] = (val.impliedVolatility, val.putDelta, val.vega, val.gamma)
-#
+
+def market_update(msg, order):
+    global count
+    global spot
+    global puts
+    global calls
+
+    count += 1
+
+    option_state = msg['market_state']
+    option_ticker = option_state['ticker']
+    option_bids = option_state['bids']
+    option_asks = option_state['asks']
+    option_price = (option_state['last_price'])
+    option_time = option_state['time']
+
+    option_type = option_ticker[-1]
+    option_strike = option_ticker[1:-1]
+    #print(option_ticker, option_time)
+    if option_type == 'P':
+        puts[option_strike] = option_price
+    elif option_type == 'C':
+        calls[option_strike] = option_price
+    elif option_ticker == 'TMXFUT':
+        spot = option_price
+    else:
+        print('unexpected security state')
+    t = 0
+    if (len(calls)+len(puts))!=82:
+        t=1
+    else:
+        calls_calc = calls.copy()
+        puts_calc = puts.copy()
+        implied_vols(calls_calc, puts_calc)
+        vol_smile(calls_calc, puts_calc)
+        calls = {}
+        puts = {}
+
+    # do we still want to keep all the old puts/calls?
+
+
+    #smileTrade(order)
+
+    #cancelOrders(order)
+
+    # mid = (max(float(option_bids.keys()[-1])) + min(float(option_asks.keys()[0])) / 2
+    # if abs(mid - min(msg['market_state']['asks'], key=int)) * 1.0 / mid >= SPREAD:
+    #     makeMarket(ticker, val, direction, mid, order)
+
+
+def implied_vols(calls_calc, puts_calc):
+    global calls_ivs
+    global puts_ivs
+    global calls
+    global puts
+    global call_greeks
+    global put_greeks
+    time_left = 7.5*60 - (time.time() - start)
+    days_left = 30/450*time_left
+
+    for call in calls_calc:
+        try:
+            iv_call = iv.implied_volatility(calls[call], spot, float(call), days_left, 0, 'c')
+        except:
+            iv_call = 0
+        calls_ivs[call] = round(iv_call, 5)
+        #call_greeks[call] = (bs.impliedVolatility, bs.callDelta, bs.vega, bs.gamma)
+
+    for put in puts_calc:
+        try:
+            iv_put = iv.implied_volatility(puts[put], spot, float(put), days_left, 0, 'p')
+        except:
+            puts_ivs[put] = round(iv_put, 5)
+        #put_greeks[put] = (bs.impliedVolatility, bs.putDelta, bs.vega, bs.gamma)
+
+
+
+def vol_smile(calls_calc, puts_calc):
+    global puts_ivs
+    global calls_ivs
+    global spot
+    callstrikes = []
+    callstrikes_ivs = []
+    for i in range(80,121):
+        callstrikes.append(i)
+        callstrikes_ivs.append(calls_ivs[str(i)])
+    #plt.plot(callstrikes, callstrikes_ivs)
+    print(callstrikes_ivs, spot)
+
+
 #
 # def makeMarket(ticker, val, direction, mid, order):
 #     if direction == 'P':
@@ -254,7 +313,7 @@ def ack_register(msg, order):
 #     print('msg', msg)
 #
 #
-# t.onMarketUpdate = market_update
+t.onMarketUpdate = market_update
 # t.onTrade = trade
 # t.onAckModifyOrders = ack_modify_order
 # t.onTraderUpdate = trader_update
