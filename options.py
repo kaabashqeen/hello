@@ -99,8 +99,6 @@ def market_update(msg, order):
     option_strike = option_ticker[1:-1]
     #print(option_ticker, option_time)
 
-    if option_ticker=='TMXFUT':
-        count +=1
     time_left = 7.5 * 60 - (time.time() - start)
     if option_type == 'P':
         put = option_strike
@@ -121,6 +119,7 @@ def market_update(msg, order):
         calls_ivs[call] = round(iv_call, 5)
         call_greeks[call] = (bs.impliedVolatility, bs.callDelta, bs.vega, bs.gamma)
     elif option_ticker == 'TMXFUT':
+        count+=1
         spot = option_price
     else:
         print('unexpected security state')
@@ -131,14 +130,20 @@ def market_update(msg, order):
         if abs(price - float(min((asks))))/ price >= SPREAD:
             marketMake(option_ticker, option_strike, option_type, price, order)
 
-    t = 0
-    if count != 1 and option_ticker=='TMXFUT':
-        calls_calc = calls.copy()
-        puts_calc = puts.copy()
-        # implied_vols(calls_calc, puts_calc)
-        vol_smile(calls_calc, puts_calc)
+    if len(calls)+len(puts)==82 and count==1:
         calls = {}
         puts = {}
+        count = 0
+        volSpread_trade_flag = False
+        spot_list = []
+        if volSpread_trade_flag is False and integralCalls is True:
+            volSpreadTrade()
+            spot_list.append(spot)
+            tracker_call_strike = spot_list[0]
+            tracker_put_strike = spot_list[0]
+        if volSpread_trade_flag is True and integralCalls is False:
+            close_volSpreadTrade()
+
 
     # do we still want to keep all the old puts/calls?
     #smileTrade(order)
@@ -213,50 +218,6 @@ def marketMake(ticker, val, direction, mid, order):
         makeTrade(ticker[:-1] + 'C', True, 5, int(mid * 1.05), order)
 
 #
-# def cancelOrders(order):
-#         global order_id
-#         global info
-#         print('canceling')
-#         print(len(order_id))
-#         if (len(order_id) == 0):
-#                 print('zeo')
-#                 return
-#         for i in range(len(order_id)):
-#                 print('can')
-#                 order.addCancel(info[i], order_id[i])
-#                 print('done')
-#         order_id = []
-#         info = []
-#
-#
-
-#
-#
-# def trader_update(msg, order):
-#     status = msg['trader_state']['positions']
-#     delta, vega = calcNetDeltaVega(status)
-#     for ticker in calls:
-#         if call_greeks[ticker][1] <= abs(delta):
-#             if delta > 0:
-#                 makeTrade('T' + ticker + 'C', False, abs(delta/call_greeks[ticker][1]), 1.05 * calls[ticker], order)
-#             else:
-#                 makeTrade('T' + ticker + 'C', True, abs(delta/call_greeks[ticker][1]), 1.05 * calls[ticker], order)
-#             break
-#
-#     '''
-#     get net delta and vega from our positions
-#
-#     hedge delta and vega
-#
-#     find stocks to buy/sell such that delta/vega approach 0
-#
-#     delta of 100, stock has delta of 1
-#
-#     try to just do delta
-#
-#
-#     '''
-#
 #
 # def calcNetDeltaVega(positions):
 #     net_delta = 0
@@ -318,6 +279,51 @@ def smileTrade(order):
             print (puts[put_ll[i-1]]*0.95)
             makeTrade(ticker, True, 1, puts[put_ll[i-1]]*0.95, order)
 
+
+
+
+def volSpreadTrade():
+    global spot
+    global volSpread_trade_flag
+    long_call_strike = int(spot)
+    ticker = "T" + str(long_call_strike) + "C"
+    makeTrade(ticker, True, 1500, price, order)
+
+    short_call_strike = 121
+    ticker = "T" + str(short_call_strike) + "C"
+    makeTrade(ticker, False, 15, price, order)
+
+    short_put_strike = int(spot)
+    ticker = "T" + str(short_put_strike) +"P"
+    makeTrade(ticker, False, 15, price, order)
+
+    long_put_strike = 80
+    ticker = "T" + str(long_put_strike) + "P"
+    makeTrade(ticker, True, 15, price, order)
+
+    volSpread_trade_flag = True
+
+def close_volSpreadTrade():
+    global spot
+    global tracker_call_strike
+    global tracker_put_strike
+    short_call_strike = tracker_call_strike
+    ticker = "T" + str(short_call_strike) + "C"
+    makeTrade(ticker, False, 15, price, order)
+
+    long_call_strike = 121
+    ticker = "T" + str(long_call_strike) + "C"
+    makeTrade(ticker, True, 15, price, order)
+
+    long_put_strike = tracker_put_strike
+    ticker = "T" + str(long_put_strike) +"P"
+    makeTrade(ticker, True, 15, price, order)
+
+    short_put_strike = 80
+    ticker = "T" + str(short_put_strike) + "P"
+    makeTrade(ticker, False, 15, price, order)
+
+    volSpread_trade_flag = False
 
 def makeTrade(ticker, isBuy, quantity, price, order):
     global threshold
