@@ -1,6 +1,6 @@
 import tradersbot as tt
 import time
-# import mibian
+import mibian
 import scipy
 import math
 import matplotlib
@@ -88,8 +88,6 @@ def market_update(msg, order):
     global puts
     global calls
 
-    count += 1
-
     option_state = msg['market_state']
     option_ticker = option_state['ticker']
     option_bids = option_state['bids']
@@ -100,35 +98,54 @@ def market_update(msg, order):
     option_type = option_ticker[-1]
     option_strike = option_ticker[1:-1]
     #print(option_ticker, option_time)
+
+    if option_ticker=='TMXFUT':
+        count +=1
+    time_left = 7.5 * 60 - (time.time() - start)
     if option_type == 'P':
+        put = option_strike
         puts[option_strike] = option_price
+        bs = mibian.BS([spot, int(put), 0, time_left / 15.0], putPrice=puts[put])
+        # iv_put = iv.implied_volatility(puts[put], spot, float(put), days_left/365, 0, 'p')
+        # print(val.impliedVolatility)
+        iv_put = bs.impliedVolatility
+        puts_ivs[put] = round(iv_put, 5)
+        put_greeks[put] = (bs.impliedVolatility, bs.putDelta, bs.vega, bs.gamma)
     elif option_type == 'C':
+        call = option_strike
         calls[option_strike] = option_price
+        bs = mibian.BS([spot, int(call), 0, time_left / 15.0], callPrice=calls[call])
+        # iv_call = iv.implied_volatility(calls[call], spot, float(call), days_left/365, 0, 'c')
+        # print(val.impliedVolatility)
+        iv_call = bs.impliedVolatility
+        calls_ivs[call] = round(iv_call, 5)
+        call_greeks[call] = (bs.impliedVolatility, bs.callDelta, bs.vega, bs.gamma)
     elif option_ticker == 'TMXFUT':
         spot = option_price
     else:
         print('unexpected security state')
+
+    price = option_price
+    asks = option_asks.keys()
+    if option_ticker!= 'TMXFUT':
+        if abs(price - float(min((asks))))/ price >= SPREAD:
+            marketMake(option_ticker, option_strike, option_type, price, order)
+
     t = 0
-    if (len(calls)+len(puts))!=82:
-        t=1
-    else:
+    if count != 1 and option_ticker=='TMXFUT':
         calls_calc = calls.copy()
         puts_calc = puts.copy()
-        implied_vols(calls_calc, puts_calc)
+        # implied_vols(calls_calc, puts_calc)
         vol_smile(calls_calc, puts_calc)
         calls = {}
         puts = {}
 
     # do we still want to keep all the old puts/calls?
-
-
     #smileTrade(order)
 
     #cancelOrders(order)
 
-    # mid = (max(float(option_bids.keys()[-1])) + min(float(option_asks.keys()[0])) / 2
-    # if abs(mid - min(msg['market_state']['asks'], key=int)) * 1.0 / mid >= SPREAD:
-    #     makeMarket(ticker, val, direction, mid, order)
+
 
 
 def implied_vols(calls_calc, puts_calc):
@@ -142,19 +159,21 @@ def implied_vols(calls_calc, puts_calc):
     days_left = 30/450*time_left
 
     for call in calls_calc:
-        try:
-            iv_call = iv.implied_volatility(calls[call], spot, float(call), days_left, 0, 'c')
-        except:
-            iv_call = 0
+        #BS([underlyingPrice, strikePrice, interestRate, daysToExpiration], volatility=x, callPrice=y, putPrice=z)
+        bs = mibian.BS([spot, int(call), 0, time_left/15.0], callPrice=calls[call])
+        #iv_call = iv.implied_volatility(calls[call], spot, float(call), days_left/365, 0, 'c')
+        #print(val.impliedVolatility)
+        iv_call = bs.impliedVolatility
         calls_ivs[call] = round(iv_call, 5)
-        #call_greeks[call] = (bs.impliedVolatility, bs.callDelta, bs.vega, bs.gamma)
+        call_greeks[call] = (bs.impliedVolatility, bs.callDelta, bs.vega, bs.gamma)
 
     for put in puts_calc:
-        try:
-            iv_put = iv.implied_volatility(puts[put], spot, float(put), days_left, 0, 'p')
-        except:
-            puts_ivs[put] = round(iv_put, 5)
-        #put_greeks[put] = (bs.impliedVolatility, bs.putDelta, bs.vega, bs.gamma)
+        bs= mibian.BS([spot, int(put), 0, time_left / 15.0], putPrice=puts[put])
+        #iv_put = iv.implied_volatility(puts[put], spot, float(put), days_left/365, 0, 'p')
+        #print(val.impliedVolatility)
+        iv_put = bs.impliedVolatility
+        puts_ivs[put] = round(iv_put, 5)
+        put_greeks[put] = (bs.impliedVolatility, bs.putDelta, bs.vega, bs.gamma)
 
 
 
@@ -164,25 +183,35 @@ def vol_smile(calls_calc, puts_calc):
     global spot
     callstrikes = []
     callstrikes_ivs = []
+    # print('call')
     for i in range(80,121):
         callstrikes.append(i)
         callstrikes_ivs.append(calls_ivs[str(i)])
-    #plt.plot(callstrikes, callstrikes_ivs)
-    print(callstrikes_ivs, spot)
+    # plt.plot(callstrikes, callstrikes_ivs)
+    # plt.show()
+    #plt.show()
+    #3print(callstrikes_ivs, spot)
+    # print('put')
+    putstrikes = []
+    putstrikes_ivs = []
+    for i in range(80,121):
+        putstrikes.append(i)
+        putstrikes_ivs.append(puts_ivs[str(i)])
+    # plt.plot(putstrikes, putstrikes_ivs)
+    # plt.show()
 
 
-#
-# def makeMarket(ticker, val, direction, mid, order):
-#     if direction == 'P':
-#         delta = put_greeks[val][0]
-#     else:
-#         delta = call_greeks[val][0]
-#     if delta > 0:
-#         # make a put offer if delta favors calls
-#         makeTrade(ticker[:-1] + 'P', True, 5, int(mid * 0.95), order)
-#     else:
-#         makeTrade(ticker[:-1] + 'C', True, 5, int(mid * 1.05), order)
-#
+def marketMake(ticker, val, direction, mid, order):
+    if direction == 'P':
+        delta = put_greeks[val][0]
+    else:
+        delta = call_greeks[val][0]
+    if delta > 0:
+        # make a put offer if delta favors calls
+        makeTrade(ticker[:-1] + 'P', True, 5, int(mid * 0.95), order)
+    else:
+        makeTrade(ticker[:-1] + 'C', True, 5, int(mid * 1.05), order)
+
 #
 # def cancelOrders(order):
 #         global order_id
@@ -200,13 +229,7 @@ def vol_smile(calls_calc, puts_calc):
 #         info = []
 #
 #
-# def ack_modify_order(msg, order):
-#     global threshold
-#     if 'orders' in msg:
-#             for k in msg['orders']:
-#                     order_id.append(k['order_id'])
-#                     info.append(k['ticker'])
-#                     threshold -= 1
+
 #
 #
 # def trader_update(msg, order):
@@ -252,71 +275,75 @@ def vol_smile(calls_calc, puts_calc):
 #     return net_delta, net_vega
 #
 #
-# def smileTrade(order):
-#     index = 80
-#     difference = 1000
-#     call_ll = sorted(list(call_greeks))
-#     put_ll = sorted(list(put_greeks))
-#     for i in range(len(call_ll)):
-#         diff = abs(spot - call_greeks[call_ll[i]][0])
-#         if diff < difference:
-#                 index = i
-#                 difference = diff
-#
-#     print(call_greeks)
-#
-#     for i in range(index, len(call_ll) - 1):
-#         print(i)
-#         #if the volatility
-#         print(call_greeks[call_ll[i]][0])
-#         if ( call_greeks[call_ll[i+1]][0] < call_greeks[call_ll[i]][0]):
-#             ticker = "T"+str(call_ll[i+1])+"C"
-#
-#             print(ticker)
-#             print (calls[call_ll[i+1]]*1.05)
-#             makeTrade(ticker, True, 1, calls[call_ll[i+1]]*1.05, order)
-#
-#     index = 80
-#     difference = 1000
-#     print(put_ll)
-#     for i in range(len(put_ll)):
-#         print(put_greeks[put_ll[i]])
-#         diff = abs(spot - put_greeks[put_ll[i]][0])
-#         if diff < difference:
-#                 index = i
-#                 difference = diff
-#     for i in range(min(len(put_ll) - 1, index), 1, -1):
-#         print(i)
-#         #if the volatility
-#         print(put_greeks[put_ll[i]][0])
-#         if (put_greeks[put_ll[i-1]][0] > put_greeks[put_ll[i]][0]):
-#             ticker = "T"+str(put_ll[i-1])+"P"
-#             print(ticker)
-#             print (puts[put_ll[i-1]]*0.95)
-#             makeTrade(ticker, True, 1, puts[put_ll[i-1]]*0.95, order)
-#
-#
-# def makeTrade(ticker, isBuy, quantity, price, order):
-#     global threshold
-#     if threshold < 10:
-#         if ticker not in history:
-#                 history[ticker] = []
-#         history[ticker].append([isBuy, quantity, price])
-#         order.addTrade(ticker, isBuy, quantity, price)
-#         threshold += 1
-#
-#
-# def trade(msg, order):
-#     print('msg', msg)
-#
-# def news(msg, order):
-#     print('msg', msg)
-#
-#
+def smileTrade(order):
+    index = 80
+    difference = 1000
+    call_ll = sorted(list(call_greeks))
+    put_ll = sorted(list(put_greeks))
+    for i in range(len(call_ll)):
+        diff = abs(spot - call_greeks[call_ll[i]][0])
+        if diff < difference:
+                index = i
+                difference = diff
+
+    print(call_greeks)
+
+    for i in range(index, len(call_ll) - 1):
+        print(i)
+        #if the volatility
+        print(call_greeks[call_ll[i]][0])
+        if ( call_greeks[call_ll[i+1]][0] < call_greeks[call_ll[i]][0]):
+            ticker = "T"+str(call_ll[i+1])+"C"
+
+            print(ticker)
+            print (calls[call_ll[i+1]]*1.05)
+            makeTrade(ticker, True, 1, calls[call_ll[i+1]]*1.05, order)
+
+    index = 80
+    difference = 1000
+    print(put_ll)
+    for i in range(len(put_ll)):
+        print(put_greeks[put_ll[i]])
+        diff = abs(spot - put_greeks[put_ll[i]][0])
+        if diff < difference:
+                index = i
+                difference = diff
+    for i in range(min(len(put_ll) - 1, index), 1, -1):
+        print(i)
+        #if the volatility
+        print(put_greeks[put_ll[i]][0])
+        if (put_greeks[put_ll[i-1]][0] > put_greeks[put_ll[i]][0]):
+            ticker = "T"+str(put_ll[i-1])+"P"
+            print(ticker)
+            print (puts[put_ll[i-1]]*0.95)
+            makeTrade(ticker, True, 1, puts[put_ll[i-1]]*0.95, order)
+
+
+def makeTrade(ticker, isBuy, quantity, price, order):
+    global threshold
+    if threshold < 10:
+        if ticker not in history:
+                history[ticker] = []
+        history[ticker].append([isBuy, quantity, price])
+        order.addTrade(ticker, isBuy, quantity, price)
+        threshold += 1
+
+
+def ack_modify_order(msg, order):
+    print('msg', msg)
+
+def trade(msg, order):
+    print('msg', msg)
+
+def news(msg, order):
+    print('msg', msg)
+
+
+
 t.onMarketUpdate = market_update
-# t.onTrade = trade
-# t.onAckModifyOrders = ack_modify_order
+t.onTrade = trade
+t.onAckModifyOrders = ack_modify_order
 # t.onTraderUpdate = trader_update
 t.onAckRegister = ack_register
-# t.onNews = news
+t.onNews = news
 t.run()
