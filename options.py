@@ -136,12 +136,12 @@ def market_update(msg, order):
         count = 0
         volSpread_trade_flag = False
         spot_list = []
-        if volSpread_trade_flag is False and integralCalls is True:
+        if volSpread_trade_flag is False and integralSkew() is True:
             volSpreadTrade()
             spot_list.append(spot)
             tracker_call_strike = spot_list[0]
             tracker_put_strike = spot_list[0]
-        if volSpread_trade_flag is True and integralCalls is False:
+        if volSpread_trade_flag is True and integralSkew() is False:
             close_volSpreadTrade()
 
 
@@ -280,6 +280,22 @@ def smileTrade(order):
             makeTrade(ticker, True, 1, puts[put_ll[i-1]]*0.95, order)
 
 
+def integralSkew(spot, calls_ivs, puts_ivs):
+    iv_call_sum = 0
+    iv_put_sum = 0
+    for i in range(int(spot),121):
+        iv_c = calls_ivs[str(i)]
+        iv_call_sum += iv_c
+
+    for i in range(80, int(spot) + 1):
+        iv_p = puts_ivs[str(i)]
+        iv_put_sum += iv_p
+
+    integral_factor = iv_call_sum / iv_put_sum
+    if integral_factor > 1.75:
+        return True
+
+    return False
 
 
 def volSpreadTrade():
@@ -287,19 +303,21 @@ def volSpreadTrade():
     global volSpread_trade_flag
     long_call_strike = int(spot)
     ticker = "T" + str(long_call_strike) + "C"
-    makeTrade(ticker, True, 1500, price, order)
+    makeTrade(ticker, True, 200, price, order)
 
     short_call_strike = 121
     ticker = "T" + str(short_call_strike) + "C"
-    makeTrade(ticker, False, 15, price, order)
+    makeTrade(ticker, False, 200, price, order)
 
     short_put_strike = int(spot)
     ticker = "T" + str(short_put_strike) +"P"
-    makeTrade(ticker, False, 15, price, order)
+    makeTrade(ticker, False, 200, price, order)
 
     long_put_strike = 80
     ticker = "T" + str(long_put_strike) + "P"
-    makeTrade(ticker, True, 15, price, order)
+    makeTrade(ticker, True, 200, price, order)
+
+    makeTrade("TMXFUT", True, 20, price, order)
 
     volSpread_trade_flag = True
 
@@ -309,19 +327,21 @@ def close_volSpreadTrade():
     global tracker_put_strike
     short_call_strike = tracker_call_strike
     ticker = "T" + str(short_call_strike) + "C"
-    makeTrade(ticker, False, 15, price, order)
+    makeTrade(ticker, False, 200, price, order)
 
     long_call_strike = 121
     ticker = "T" + str(long_call_strike) + "C"
-    makeTrade(ticker, True, 15, price, order)
+    makeTrade(ticker, True, 200, price, order)
 
     long_put_strike = tracker_put_strike
     ticker = "T" + str(long_put_strike) +"P"
-    makeTrade(ticker, True, 15, price, order)
+    makeTrade(ticker, True, 200, price, order)
 
     short_put_strike = 80
     ticker = "T" + str(short_put_strike) + "P"
-    makeTrade(ticker, False, 15, price, order)
+    makeTrade(ticker, False, 200, price, order)
+
+    makeTrade("TMXFUT", False, 20, price, order)
 
     volSpread_trade_flag = False
 
