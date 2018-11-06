@@ -8,6 +8,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import py_vollib.black_scholes.implied_volatility as iv
 
+
+import tradersbot as tt
+import sys
+
+t = tt.TradersBot(host=sys.argv[1], id=sys.argv[2], password=sys.argv[3])
+
+
 # Keeps track of prices
 SECURITIES = {}
 UNDERLYINGS = {}
