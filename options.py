@@ -8,6 +8,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import py_vollib.black_scholes.implied_volatility as iv
 
+import tradersbot as tt
+import sys
+
+t = tt.TradersBot('127.0.0.1', 'trader0', 'trader0')
 # Keeps track of prices
 SECURITIES = {}
 UNDERLYINGS = {}
@@ -293,7 +297,7 @@ def integralSkew(spot, calls_ivs, puts_ivs):
         iv_put_sum += iv_p
 
     integral_factor = iv_call_sum / iv_put_sum
-    if integral_factor > 1.35:
+    if integral_factor > 1.15:
         return True
     print(iv_call_sum, iv_put_sum)
     return False
@@ -303,22 +307,23 @@ def volSpreadTrade(order):
     global spot
     global volSpread_trade_flag
     long_call_strike = int(spot)
-    print(spot)
+    # print(spot)
     ticker = "T" + str(long_call_strike) + "C"
-    makeTrade(ticker, True, 2000, None, order)
+    makeTrade(ticker, True, 500, None, order)
 
-    short_call_strike = 121
+    short_call_strike = 120
     ticker = "T" + str(short_call_strike) + "C"
-    makeTrade(ticker, False, 2000, None, order)
+    makeTrade(ticker, False, 500, None, order)
 
     short_put_strike = int(spot)
     ticker = "T" + str(short_put_strike) +"P"
-    makeTrade(ticker, False, 2000, None, order)
+    makeTrade(ticker, False, 500, None, order)
 
     long_put_strike = 80
     ticker = "T" + str(long_put_strike) + "P"
-    makeTrade(ticker, True, 2000, None, order)
-
+    makeTrade(ticker, True, 500, None, order)
+    # print(call_greeks[str(short_call_strike)])
+    # print(put_greeks[str(long_put_strike)])
     #makeTrade("TMXFUT", False, 200, None, order)
 
     volSpread_trade_flag = True
@@ -329,19 +334,19 @@ def close_volSpreadTrade(order):
     global tracker_put_strike
     short_call_strike = tracker_call_strike
     ticker = "T" + str(short_call_strike) + "C"
-    makeTrade(ticker, False, 200, None, order)
+    makeTrade(ticker, False, 50, None, order)
 
     long_call_strike = 121
     ticker = "T" + str(long_call_strike) + "C"
-    makeTrade(ticker, True, 200, None, order)
+    makeTrade(ticker, True, 50, None, order)
 
     long_put_strike = tracker_put_strike
     ticker = "T" + str(long_put_strike) +"P"
-    makeTrade(ticker, True, 200, None, order)
+    makeTrade(ticker, True, 50, None, order)
 
     short_put_strike = 80
     ticker = "T" + str(short_put_strike) + "P"
-    makeTrade(ticker, False, 200, None, order)
+    makeTrade(ticker, False, 50, None, order)
 
     #makeTrade("TMXFUT", True, 20, None, order)
 
