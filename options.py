@@ -1,7 +1,7 @@
 import tradersbot as tt
 import time
 import mibian
-import scipy
+import scipy.stats as ss
 import math
 import matplotlib
 import numpy as np
@@ -55,7 +55,11 @@ history = {} # ticker : [isBuy, quantity, price]
 #
 #         self.volcurve = volcurve
 #
+def calc_delta():
+    pass
 
+def calc_vega():
+    pass
 
 
 def ack_register(msg, order):
@@ -112,7 +116,10 @@ def market_update(msg, order):
         # print(val.impliedVolatility)
         iv_put = bs.impliedVolatility
         puts_ivs[put] = round(iv_put, 5)
-        put_greeks[put] = (bs.impliedVolatility, bs.putDelta, bs.vega, bs.gamma)
+        d1 = (math.log(spot/int(put),2) + iv_put/2*time_left/15)/((iv_put**1/2)*(time_left**(1/2)))-1
+        delta = ss.norm.cdf(d1)
+        vega = ss.norm.pdf(d1)/(spot*(iv_put**(1/2))*(time_left**(1/2)))
+        put_greeks[put] = [delta, vega]
     elif option_type == 'C':
         call = option_strike
         calls[option_strike] = option_price
@@ -120,8 +127,12 @@ def market_update(msg, order):
         # iv_call = iv.implied_volatility(calls[call], spot, float(call), days_left/365, 0, 'c')
         # print(val.impliedVolatility)
         iv_call = bs.impliedVolatility
+        d1 = (math.log(spot/int(call),2) + iv_call/2*time_left/15)/((iv_call**1/2)*(time_left**(1/2)))
+        delta = ss.norm.cdf(d1)
+        vega = ss.norm.pdf(d1)/(spot*(iv_call**(1/2))*(time_left**(1/2)))
+        call_greeks[call] = (delta, vega)
         calls_ivs[call] = round(iv_call, 5)
-        call_greeks[call] = (bs.impliedVolatility, bs.callDelta, bs.vega, bs.gamma)
+        call_greeks[call] = [delta, vega]
     elif option_ticker == 'TMXFUT':
         count+=1
         spot = option_price
@@ -154,36 +165,6 @@ def market_update(msg, order):
     #smileTrade(order)
 
     #cancelOrders(order)
-
-
-
-
-def implied_vols(calls_calc, puts_calc):
-    global calls_ivs
-    global puts_ivs
-    global calls
-    global puts
-    global call_greeks
-    global put_greeks
-    time_left = 7.5*60 - (time.time() - start)
-    days_left = 30/450*time_left
-
-    for call in calls_calc:
-        #BS([underlyingPrice, strikePrice, interestRate, daysToExpiration], volatility=x, callPrice=y, putPrice=z)
-        bs = mibian.BS([spot, int(call), 0, time_left/15.0], callPrice=calls[call])
-        #iv_call = iv.implied_volatility(calls[call], spot, float(call), days_left/365, 0, 'c')
-        #print(val.impliedVolatility)
-        iv_call = bs.impliedVolatility
-        calls_ivs[call] = round(iv_call, 5)
-        call_greeks[call] = (bs.impliedVolatility, bs.callDelta, bs.vega, bs.gamma)
-
-    for put in puts_calc:
-        bs= mibian.BS([spot, int(put), 0, time_left / 15.0], putPrice=puts[put])
-        #iv_put = iv.implied_volatility(puts[put], spot, float(put), days_left/365, 0, 'p')
-        #print(val.impliedVolatility)
-        iv_put = bs.impliedVolatility
-        puts_ivs[put] = round(iv_put, 5)
-        put_greeks[put] = (bs.impliedVolatility, bs.putDelta, bs.vega, bs.gamma)
 
 
 
@@ -222,25 +203,22 @@ def marketMake(ticker, val, direction, mid, order):
     else:
         makeTrade(ticker[:-1] + 'C', True, 5, int(mid * 1.05), order)
 
-#
-#
-# def calcNetDeltaVega(positions):
-#     net_delta = 0
-#     net_vega = 0
-#     print(positions)
-#     print(put_greeks)
-#     print(call_greeks)
-#     for ticker in positions:
-#         if ticker[-1] == 'P' and ticker[1:-1] in put_greeks and put_greeks[ticker[1:-1]][1] != None:
-#             net_delta += put_greeks[ticker[1:-1]][1]
-#             net_vega += put_greeks[ticker[1:-1]][2]
-#         elif ticker[-1] == 'C' and ticker[1:-1] in call_greeks and call_greeks[ticker[1:-1]][1] != None:
-#             print(call_greeks[ticker[1:-1]])
-#             net_delta += call_greeks[ticker[1:-1]][1]
-#             net_vega += call_greeks[ticker[1:-1]][2]
-#     return net_delta, net_vega
-#
-#
+def calcNetDeltaVega(positions):
+    net_delta = 0
+    net_vega = 0
+    print(positions)
+    print(put_greeks)
+    print(call_greeks)
+    for ticker in positions:
+        if ticker[-1] == 'P' and ticker[1:-1] in put_greeks and put_greeks[ticker[1:-1]][1] != None:
+            net_delta += put_greeks[ticker[1:-1]][1]
+            net_vega += put_greeks[ticker[1:-1]][2]
+        elif ticker[-1] == 'C' and ticker[1:-1] in call_greeks and call_greeks[ticker[1:-1]][1] != None:
+            print(call_greeks[ticker[1:-1]])
+            net_delta += call_greeks[ticker[1:-1]][1]
+            net_vega += call_greeks[ticker[1:-1]][2]
+    return net_delta, net_vega
+
 def smileTrade(order):
     index = 80
     difference = 1000
