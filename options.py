@@ -146,19 +146,28 @@ def market_update(msg, order):
     #         marketMake(option_ticker, option_strike, option_type, price, order)
 
     if len(calls)+len(puts)==82 and count==1:
-
         calls = {}
         puts = {}
         count = 0
         volSpread_trade_flag = False
-        spot_list = []
-        if volSpread_trade_flag is False and integralSkew(spot, calls_ivs, puts_ivs) is True:
-            volSpreadTrade(order)
-            spot_list.append(spot)
-            tracker_call_strike = spot_list[0]
-            tracker_put_strike = spot_list[0]
-        if volSpread_trade_flag is True and integralSkew(spot, calls_ivs, puts_ivs) is False:
-            close_volSpreadTrade(order)
+        up_spot_list = []
+        down_spot_list = []
+        if volSpread_trade_flag is False and up_integralSkew(spot, calls_ivs, puts_ivs) == "up":
+            up_volSpreadTrade(order)
+            up_spot_list.append(spot)
+            tracker_call_strike = up_spot_list[0]
+            tracker_put_strike = up_spot_list[0]
+        if volSpread_trade_flag is True and up_integralSkew(spot, calls_ivs, puts_ivs) == "close":
+            close_up_volSpreadTrade(order)
+
+        if volSpread_trade_flag is False and down_integralSkew(spot, calls_ivs, puts_ivs) == "down":
+            down_volSpreadTrade(order)
+            down_spot_list.append(spot)
+            tracker_call_strike = down_spot_list[0]
+            tracker_put_strike = down_spot_list[0]
+
+        if volSpread_trade_flag is True and down_integralSkew(spot, calls_ivs, puts_ivs) == "close":
+            close_down_volSpreadTrade(order)
 
 
     # do we still want to keep all the old puts/calls?
@@ -262,8 +271,7 @@ def smileTrade(order):
             print (puts[put_ll[i-1]]*0.95)
             makeTrade(ticker, True, 1, puts[put_ll[i-1]]*0.95, order)
 
-
-def integralSkew(spot, calls_ivs, puts_ivs):
+def up_integralSkew(spot, calls_ivs, puts_ivs):
     iv_call_sum = 0
     iv_put_sum = 0
     for i in range(int(spot),121):
@@ -276,12 +284,34 @@ def integralSkew(spot, calls_ivs, puts_ivs):
 
     integral_factor = iv_call_sum / iv_put_sum
     if integral_factor > 1.15:
-        return True
-    print(iv_call_sum, iv_put_sum)
-    return False
+        return "up"
+    elif integral_factor <= 1.05:
+        return "close"
+    else:
+        return "neither"
 
 
-def volSpreadTrade(order):
+def down_integralSkew(spot, calls_ivs, puts_ivs):
+    iv_call_sum = 0
+    iv_put_sum = 0
+    for i in range(int(spot),121):
+        iv_c = calls_ivs[str(i)]
+        iv_call_sum += iv_c
+
+    for i in range(80, int(spot) + 1):
+        iv_p = puts_ivs[str(i)]
+        iv_put_sum += iv_p
+
+    integral_factor = iv_call_sum / iv_put_sum
+    if integral_factor < .85:
+        return "down"
+    elif integral_factor >= 0.95:
+        return "close"
+    else:
+        return "neither"
+
+
+def up_volSpreadTrade(order):
     global spot
     global volSpread_trade_flag
     long_call_strike = int(spot)
@@ -302,14 +332,17 @@ def volSpreadTrade(order):
     makeTrade(ticker, True, 500, None, order)
     # print(call_greeks[str(short_call_strike)])
     # print(put_greeks[str(long_put_strike)])
-    #makeTrade("TMXFUT", False, 200, None, order)
+
+    #makeTrade("TMXFUT", False, delta quantity, None, order)
 
     volSpread_trade_flag = True
 
-def close_volSpreadTrade(order):
+
+def close_up_volSpreadTrade(order):
     global spot
     global tracker_call_strike
     global tracker_put_strike
+    global volSpread_trade_flag
     short_call_strike = tracker_call_strike
     ticker = "T" + str(short_call_strike) + "C"
     makeTrade(ticker, False, 50, None, order)
@@ -326,9 +359,63 @@ def close_volSpreadTrade(order):
     ticker = "T" + str(short_put_strike) + "P"
     makeTrade(ticker, False, 50, None, order)
 
-    #makeTrade("TMXFUT", True, 20, None, order)
+    # makeTrade("TMXFUT", True, delta quantity, None, order)
 
     volSpread_trade_flag = False
+
+
+def down_volSpreadTrade(order):
+    global spot
+    global volSpread_trade_flag
+    short_call_strike = int(spot)
+    # print(spot)
+    ticker = "T" + str(short_call_strike) + "C"
+    makeTrade(ticker, False, 500, None, order)
+
+    long_call_strike = 120
+    ticker = "T" + str(long_call_strike) + "C"
+    makeTrade(ticker, True, 500, None, order)
+
+    long_put_strike = int(spot)
+    ticker = "T" + str(long_put_strike) +"P"
+    makeTrade(ticker, True, 500, None, order)
+
+    short_put_strike = 80
+    ticker = "T" + str(short_put_strike) + "P"
+    makeTrade(ticker, False, 500, None, order)
+    # print(call_greeks[str(short_call_strike)])
+    # print(put_greeks[str(long_put_strike)])
+
+    #makeTrade("TMXFUT", False, delta quantity, None, order)
+
+    volSpread_trade_flag = True
+
+
+def close_down_volSpreadTrade(order):
+    global spot
+    global tracker_call_strike
+    global tracker_put_strike
+    global volSpread_trade_flag
+    long_call_strike = tracker_call_strike
+    ticker = "T" + str(long_call_strike) + "C"
+    makeTrade(ticker, True, 500, None, order)
+
+    short_call_strike = 120
+    ticker = "T" + str(short_call_strike) + "C"
+    makeTrade(ticker, False, 500, None, order)
+
+    short_put_strike = tracker_put_strike
+    ticker = "T" + str(short_put_strike) +"P"
+    makeTrade(ticker, False, 50, None, order)
+
+    long_put_strike = 80
+    ticker = "T" + str(long_put_strike) + "P"
+    makeTrade(ticker, True, 50, None, order)
+
+    # makeTrade("TMXFUT", True, delta quantity, None, order)
+
+    volSpread_trade_flag = False
+
 
 def makeTrade(ticker, isBuy, quantity, price, order):
     global threshold
